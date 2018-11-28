@@ -1,51 +1,108 @@
-//Dependencies
-const express = require("express");
-const mongojs = require("mongojs");
-const logger = require("logger");
-const mongoose = require("mongoose");
+var express = require("express");
+var logger = require("morgan");
+var mongoose = require("mongoose");
 
-//The Scraping tools
-const cheerio = require("cheerio");
-const axio = require("axios");
 
-//Models
-const db = require("./models");
+var axios = require("axios");
+var cheerio = require("cheerio");
 
-var PORT = 3000;
+var db = require("./models");
 
-//Initializing Express
-const app = express();
+var PORT = process.env.PORT || 3000;
+var app = express();
 
-//Middleware configuration
-
-//Morgan for logging requests
 app.use(logger("dev"));
-// Parse request body as JSON
+
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-// Make public a static folder
+
 app.use(express.static("public"));
 
-// Connect to the Mongo DB
-mongoose.connect("mongodb://localhost/unit18Populater", { useNewUrlParser: true });
-
-//ROUTES
-
-//GET route for scraping
+var databaseUri = 'mongodb://localhost/week18day3mongoose';
+if (process.env.MONGODB_URI) {
+mongoose.connect(process.env.MONGODB_URI, { useNewUrlParser: true });
+}else {
+  mongoose.connect(databaseUri);
+}
 app.get("/scrape", function (req, res) {
-  axios.get("https://www.goodreads.com/quotes")
+  axios.get("https://10bestquotes.com")
     .then(function (response) {
 
-//I took the body of the html and assigned it to a variable
       var $ = cheerio.load(response.data);
 
-//Targeting anything in a div that has a class of quoteText, looping, and putting into an object
-      $("div.quoteText").each(function (i, element) {
-        
+      $("h2").each(function (i, element) {
         var result = {};
+        console.log('hi')
+        result.title = $(this)
+          .children("a")
+          .text();
+        result.link = $(this)
+          .children("a")
+          .attr("href");
+        result.summary = $(this)
+          .children("a")
+          .text();
+        result.grid = $(this)
+          .children("a")
+          .attr("href");
+        console.log(result);
+        db.Article.create(result)
+          .then(function (dbArticle) {
+            console.log(dbArticle);
+          })
+          .catch(function (err) {
+            return res.json(err);
+          });
+      });
 
+      res.send("Scrape Complete");
+    });
+});
 
+app.get("/articles", function (req, res) {
+  db.Article.find({})
+    .then(function(dbArticle) {
+      res.json(dbArticle);
+    })
+    .catch(function(err) {
+      console.log(err);
+      res.status(500).json(err);
+    });
+});
 
-      })
-  })
-})
+app.get("/articles/:id", function (req, res) {
+
+  db.Article
+    .findById( req.params.id )
+    .populate("note")
+    .then(function (dbArticle) {
+      res.json(dbArticle);
+    })
+    .catch(function (err) {
+      res.status(500).json(err);
+    });
+});
+
+app.get("")
+
+app.post("/articles/:id", function (req, res) {
+
+  db.Note
+    .create(req.body)
+    .then(function (dbNote) {
+      return db.Article
+      .findOneAndUpdate(req.params.id,
+    {$set:  {note: dbNote._id }}, { new: true })
+    })
+    .then(function (dbArticle) {
+      res.json(dbArticle);
+    })
+    .catch(function(err) {
+      console.log(err);
+      res.status(500).json(err);
+    });
+});
+
+app.listen(PORT, function () {
+  console.log("App running on port " + PORT + "!");
+});
